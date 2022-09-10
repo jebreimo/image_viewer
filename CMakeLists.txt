@@ -13,10 +13,10 @@ set(CMAKE_CXX_STANDARD 20)
 include(FetchContent)
 FetchContent_Declare(tungsten
     GIT_REPOSITORY "https://github.com/jebreimo/Tungsten.git"
-    GIT_TAG v0.2.71)
+    GIT_TAG v0.2.73)
 FetchContent_Declare(yimage
     GIT_REPOSITORY "https://github.com/jebreimo/Yimage.git"
-    GIT_TAG main)
+    GIT_TAG v0.1.0)
 FetchContent_Declare(argos
     GIT_REPOSITORY "https://github.com/jebreimo/Argos.git"
     GIT_TAG v1.1.267)

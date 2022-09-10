@@ -42,66 +42,74 @@ namespace
         throw std::runtime_error("GLES has no corresponding pixel format: "
                                  + std::to_string(int(type)));
     }
+
+    struct View
+    {
+        Xyz::Vector2F center;
+        float scale = 1.0;
+    };
 }
 
 class ImageViewer : public Tungsten::EventLoop
 {
 public:
-    [[nodiscard]]
-    const std::string& image_path() const
+    void set_image(yimage::Image image)
     {
-        return m_image_path;
+        img_ = std::move(image);
     }
 
-    void set_image_path(const std::string& image_path)
+    void set_view(const View& view)
     {
-        m_image_path = image_path;
+        view_ = view;
     }
 
     void on_startup(Tungsten::SdlApplication& app) final
     {
+        if (img_.size() == 0)
+            throw std::runtime_error("The image is empty!");
+
+        img_asp_ratio_ = double(img_.width()) / double(img_.height());
         float square[] = {-1.0f, -1.0f, 0.0f, 0.0f, 1.0f,
                           1.0f, -1.0f, 0.0f, 1.0f, 1.0f,
                           1.0f, 1.0f, 0.0f, 1.0f, 0.0f,
                           -1.0f, 1.0f, 0.0f, 0.0f, 0.0f};
         short indexes[] = {0, 2, 3, 0, 1, 2};
 
-        m_vertex_array = Tungsten::generate_vertex_array();
-        Tungsten::bind_vertex_array(m_vertex_array);
+        vertex_array_ = Tungsten::generate_vertex_array();
+        Tungsten::bind_vertex_array(vertex_array_);
 
-        m_buffers = Tungsten::generate_buffers(2);
-        Tungsten::bind_buffer(GL_ARRAY_BUFFER, m_buffers[0]);
+        buffers_ = Tungsten::generate_buffers(2);
+        Tungsten::bind_buffer(GL_ARRAY_BUFFER, buffers_[0]);
         Tungsten::set_buffer_data(GL_ARRAY_BUFFER, sizeof(square),
                                   square, GL_STATIC_DRAW);
-        Tungsten::bind_buffer(GL_ELEMENT_ARRAY_BUFFER, m_buffers[1]);
+        Tungsten::bind_buffer(GL_ELEMENT_ARRAY_BUFFER, buffers_[1]);
         Tungsten::set_buffer_data(GL_ELEMENT_ARRAY_BUFFER, sizeof(indexes),
                                   indexes, GL_STATIC_DRAW);
 
-        m_texture = Tungsten::generate_texture();
-        Tungsten::bind_texture(GL_TEXTURE_2D, m_texture);
+        texture_ = Tungsten::generate_texture();
+        Tungsten::bind_texture(GL_TEXTURE_2D, texture_);
 
-        auto image = yimage::read_image(m_image_path);
-        auto [format, type] = get_ogl_pixel_type(image.pixel_type());
-        //glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        auto [format, type] = get_ogl_pixel_type(img_.pixel_type());
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         Tungsten::set_texture_image_2d(GL_TEXTURE_2D, 0, GL_RGBA,
-                                       int(image.width()), int(image.height()),
+                                       int(img_.width()), int(img_.height()),
                                        format, type,
-                                       image.data());
+                                       img_.data());
+        img_ = {};
 
         Tungsten::set_texture_min_filter(GL_TEXTURE_2D, GL_LINEAR);
         Tungsten::set_texture_mag_filter(GL_TEXTURE_2D, GL_LINEAR);
         Tungsten::set_texture_parameter(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         Tungsten::set_texture_parameter(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-        m_program.setup();
+        program_.setup();
         Tungsten::define_vertex_attribute_pointer(
-            m_program.position, 3, GL_FLOAT, false, 5 * sizeof(float), 0);
-        Tungsten::enable_vertex_attribute(m_program.position);
+            program_.position, 3, GL_FLOAT, false, 5 * sizeof(float), 0);
+        Tungsten::enable_vertex_attribute(program_.position);
         Tungsten::define_vertex_attribute_pointer(
-            m_program.textureCoord, 2, GL_FLOAT, true, 5 * sizeof(float),
+            program_.textureCoord, 2, GL_FLOAT, true, 5 * sizeof(float),
             3 * sizeof(float));
-        Tungsten::enable_vertex_attribute(m_program.textureCoord);
+        Tungsten::enable_vertex_attribute(program_.textureCoord);
     }
 
     bool on_event(Tungsten::SdlApplication& app, const SDL_Event& event) override
@@ -109,7 +117,9 @@ public:
         switch (event.type)
         {
         case SDL_MOUSEWHEEL:
+            return on_mousewheel(app, event);
         case SDL_MOUSEMOTION:
+            return on_mousemotion(app, event);
         case SDL_MOUSEBUTTONDOWN:
         case SDL_MOUSEBUTTONUP:
             return true;
@@ -122,18 +132,62 @@ public:
     {
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        auto [w, h] = app.window_size();
-        m_program.transformation.set(Xyz::scale3(
-            std::min(float(h) / float(w), 1.0f),
-            std::min(float(w) / float(h), 1.0f)));
+        program_.transformation.set(get_transformation(app, view_));
         Tungsten::draw_elements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT);
     }
 private:
-    std::string m_image_path;
-    std::vector<Tungsten::BufferHandle> m_buffers;
-    Tungsten::VertexArrayHandle m_vertex_array;
-    Tungsten::TextureHandle m_texture;
-    Render2DShaderProgram m_program;
+    bool on_mousewheel(Tungsten::SdlApplication& app, const SDL_Event& event)
+    {
+        auto scale = compute_scale(app);
+        auto offset = Xyz::divide(mouse_pos_, scale);
+        auto pos = view_.center + offset;
+        if (event.wheel.y > 0)
+            view_.scale *= 1.25f;
+        else
+            view_.scale /= 1.25f;
+        scale = compute_scale(app);
+        view_.center = pos - divide(mouse_pos_, scale);
+
+        return true;
+    }
+
+    bool on_mousemotion(Tungsten::SdlApplication& app, const SDL_Event& event)
+    {
+        auto [w, h] = app.window_size();
+        SDL_Log("%d, %d", event.motion.x, event.motion.y);
+        mouse_pos_ = {float(2 * event.motion.x) / float(w) - 1,
+                      float(2 * (h - event.motion.y)) / float(h) - 1};
+        return true;
+    }
+
+    [[nodiscard]]
+    Xyz::Vector2F compute_scale(const Tungsten::SdlApplication& app) const
+    {
+        auto [w, h] = app.window_size();
+        auto win_asp_ratio = double(w) / double(h);
+        Xyz::Vector2F scale_vec;
+        if (img_asp_ratio_ > win_asp_ratio)
+            scale_vec = {1.0f, float(win_asp_ratio / img_asp_ratio_)};
+        else
+            scale_vec = {float(img_asp_ratio_) / float(win_asp_ratio), 1.0f};
+        return view_.scale * scale_vec;
+    }
+
+    Xyz::Matrix3F get_transformation(const Tungsten::SdlApplication& app,
+                                     const View& v)
+    {
+        return Xyz::scale3(compute_scale(app))
+               * Xyz::translate3(-v.center);
+    }
+
+    yimage::Image img_;
+    double img_asp_ratio_;
+    std::vector<Tungsten::BufferHandle> buffers_;
+    Tungsten::VertexArrayHandle vertex_array_;
+    Tungsten::TextureHandle texture_;
+    Render2DShaderProgram program_;
+    View view_;
+    Xyz::Vector2F mouse_pos_;
 };
 
 int main(int argc, char* argv[])
@@ -142,16 +196,16 @@ int main(int argc, char* argv[])
     {
         argos::ArgumentParser parser(argv[0]);
         parser.add(argos::Argument("IMAGE")
-                       .help("An image file (PNG or JPEG) that the program will display."));
+                       .help("An image file (PNG or JPEG)."));
         Tungsten::SdlApplication::add_command_line_options(parser);
         auto args = parser.parse(argc, argv);
         auto event_loop = std::make_unique<ImageViewer>();
-        event_loop->set_image_path(args.value("IMAGE").as_string());
+        event_loop->set_image(yimage::read_image(args.value("IMAGE").as_string()));
         Tungsten::SdlApplication app("ShowPng", std::move(event_loop));
         app.read_command_line_options(args);
         app.run();
     }
-    catch (Tungsten::TungstenException& ex)
+    catch (std::exception& ex)
     {
         std::cout << ex.what() << "\n";
         return 1;
