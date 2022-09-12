@@ -46,7 +46,7 @@ namespace
     struct View
     {
         Xyz::Vector2F center;
-        float scale = 1.0;
+        int scale = 0;
     };
 }
 
@@ -117,12 +117,13 @@ public:
         switch (event.type)
         {
         case SDL_MOUSEWHEEL:
-            return on_mousewheel(app, event);
+            return on_mouse_wheel(app, event);
         case SDL_MOUSEMOTION:
-            return on_mousemotion(app, event);
+            return on_mouse_motion(app, event);
         case SDL_MOUSEBUTTONDOWN:
+            return on_mouse_button_down(app, event);
         case SDL_MOUSEBUTTONUP:
-            return true;
+            return on_mouse_button_up(app, event);
         default:
             return false;
         }
@@ -132,31 +133,66 @@ public:
     {
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        program_.transformation.set(get_transformation(app, view_));
+        program_.transformation.set(get_transformation(app));
         Tungsten::draw_elements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT);
     }
 private:
-    bool on_mousewheel(Tungsten::SdlApplication& app, const SDL_Event& event)
+    bool on_mouse_wheel(const Tungsten::SdlApplication& app,
+                        const SDL_Event& event)
     {
         auto scale = compute_scale(app);
         auto offset = Xyz::divide(mouse_pos_, scale);
         auto pos = view_.center + offset;
         if (event.wheel.y > 0)
-            view_.scale *= 1.25f;
+            ++view_.scale;
         else
-            view_.scale /= 1.25f;
+            --view_.scale;
         scale = compute_scale(app);
         view_.center = pos - divide(mouse_pos_, scale);
+
+        if (mouse_move_)
+        {
+            mouse_click_pos_ = mouse_pos_;
+            mouse_down_center_ = view_.center;
+        }
+        return true;
+    }
+
+    bool on_mouse_motion(const Tungsten::SdlApplication& app,
+                         const SDL_Event& event)
+    {
+        auto [w, h] = app.window_size();
+        mouse_pos_ = {float(2 * event.motion.x) / float(w) - 1,
+                      float(2 * (h - event.motion.y)) / float(h) - 1};
+
+        if (mouse_move_)
+        {
+            auto delta = divide(mouse_click_pos_ - mouse_pos_,
+                                  compute_scale(app))
+                         + mouse_down_center_;
+            view_.center = delta;
+        }
 
         return true;
     }
 
-    bool on_mousemotion(Tungsten::SdlApplication& app, const SDL_Event& event)
+    bool on_mouse_button_down(const Tungsten::SdlApplication& app,
+                              const SDL_Event& event)
     {
-        auto [w, h] = app.window_size();
-        SDL_Log("%d, %d", event.motion.x, event.motion.y);
-        mouse_pos_ = {float(2 * event.motion.x) / float(w) - 1,
-                      float(2 * (h - event.motion.y)) / float(h) - 1};
+        if (event.button.button == SDL_BUTTON_LEFT)
+        {
+            mouse_move_ = true;
+            mouse_click_pos_ = mouse_pos_;
+            mouse_down_center_ = view_.center;
+        }
+        return true;
+    }
+
+    bool on_mouse_button_up(const Tungsten::SdlApplication& app,
+                            const SDL_Event& event)
+    {
+        if (event.button.button == SDL_BUTTON_LEFT)
+            mouse_move_ = false;
         return true;
     }
 
@@ -170,24 +206,27 @@ private:
             scale_vec = {1.0f, float(win_asp_ratio / img_asp_ratio_)};
         else
             scale_vec = {float(img_asp_ratio_) / float(win_asp_ratio), 1.0f};
-        return view_.scale * scale_vec;
+        return pow(1.25f, float(view_.scale)) * scale_vec;
     }
 
-    Xyz::Matrix3F get_transformation(const Tungsten::SdlApplication& app,
-                                     const View& v)
+    [[nodiscard]]
+    Xyz::Matrix3F get_transformation(const Tungsten::SdlApplication& app) const
     {
         return Xyz::scale3(compute_scale(app))
-               * Xyz::translate3(-v.center);
+               * Xyz::translate3(-view_.center);
     }
 
     yimage::Image img_;
-    double img_asp_ratio_;
+    double img_asp_ratio_ = {};
     std::vector<Tungsten::BufferHandle> buffers_;
     Tungsten::VertexArrayHandle vertex_array_;
     Tungsten::TextureHandle texture_;
     Render2DShaderProgram program_;
     View view_;
+    Xyz::Vector2F mouse_down_center_;
     Xyz::Vector2F mouse_pos_;
+    Xyz::Vector2F mouse_click_pos_;
+    bool mouse_move_ = {};
 };
 
 int main(int argc, char* argv[])

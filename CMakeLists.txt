@@ -6,7 +6,7 @@
 ## License text is included with the source distribution.
 ##****************************************************************************
 cmake_minimum_required(VERSION 3.23)
-project(image_viewer)
+project(image_viewer VERSION 0.1.0)
 
 set(CMAKE_CXX_STANDARD 20)
 
