@@ -150,11 +150,6 @@ private:
         scale = compute_scale(app);
         view_.center = pos - divide(mouse_pos_, scale);
 
-        if (mouse_move_)
-        {
-            mouse_click_pos_ = mouse_pos_;
-            mouse_down_center_ = view_.center;
-        }
         return true;
     }
 
@@ -162,17 +157,18 @@ private:
                          const SDL_Event& event)
     {
         auto [w, h] = app.window_size();
-        mouse_pos_ = {float(2 * event.motion.x) / float(w) - 1,
-                      float(2 * (h - event.motion.y)) / float(h) - 1};
+        auto new_mouse_pos = Xyz::make_vector2(
+            float(2 * event.motion.x) / float(w) - 1,
+            float(2 * (h - event.motion.y)) / float(h) - 1);
 
         if (mouse_move_)
         {
-            auto delta = divide(mouse_click_pos_ - mouse_pos_,
+            view_.center = divide(mouse_pos_ - new_mouse_pos,
                                   compute_scale(app))
-                         + mouse_down_center_;
-            view_.center = delta;
+                           + view_.center;
         }
 
+        mouse_pos_ = new_mouse_pos;
         return true;
     }
 
@@ -180,11 +176,7 @@ private:
                               const SDL_Event& event)
     {
         if (event.button.button == SDL_BUTTON_LEFT)
-        {
             mouse_move_ = true;
-            mouse_click_pos_ = mouse_pos_;
-            mouse_down_center_ = view_.center;
-        }
         return true;
     }
 
@@ -223,9 +215,8 @@ private:
     Tungsten::TextureHandle texture_;
     Render2DShaderProgram program_;
     View view_;
-    Xyz::Vector2F mouse_down_center_;
     Xyz::Vector2F mouse_pos_;
-    Xyz::Vector2F mouse_click_pos_;
+    Xyz::Vector2F prev_mouse_pos_;
     bool mouse_move_ = {};
 };
 
