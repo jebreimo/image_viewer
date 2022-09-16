@@ -42,12 +42,6 @@ namespace
         throw std::runtime_error("GLES has no corresponding pixel format: "
                                  + std::to_string(int(type)));
     }
-
-    struct View
-    {
-        Xyz::Vector2F center;
-        int scale = 0;
-    };
 }
 
 class ImageViewer : public Tungsten::EventLoop
@@ -56,11 +50,6 @@ public:
     void set_image(yimage::Image image)
     {
         img_ = std::move(image);
-    }
-
-    void set_view(const View& view)
-    {
-        view_ = view;
     }
 
     void on_startup(Tungsten::SdlApplication& app) final
@@ -142,13 +131,13 @@ private:
     {
         auto scale = compute_scale(app);
         auto offset = Xyz::divide(mouse_pos_, scale);
-        auto pos = view_.center + offset;
+        auto pos = center_ + offset;
         if (event.wheel.y > 0)
-            ++view_.scale;
+            ++scale_;
         else
-            --view_.scale;
+            --scale_;
         scale = compute_scale(app);
-        view_.center = pos - divide(mouse_pos_, scale);
+        center_ = pos - divide(mouse_pos_, scale);
 
         return true;
     }
@@ -163,9 +152,9 @@ private:
 
         if (mouse_move_)
         {
-            view_.center = divide(mouse_pos_ - new_mouse_pos,
+            center_ = divide(mouse_pos_ - new_mouse_pos,
                                   compute_scale(app))
-                           + view_.center;
+                           + center_;
         }
 
         mouse_pos_ = new_mouse_pos;
@@ -198,26 +187,26 @@ private:
             scale_vec = {1.0f, float(win_asp_ratio / img_asp_ratio_)};
         else
             scale_vec = {float(img_asp_ratio_) / float(win_asp_ratio), 1.0f};
-        return pow(1.25f, float(view_.scale)) * scale_vec;
+        return pow(1.25f, float(scale_)) * scale_vec;
     }
 
     [[nodiscard]]
     Xyz::Matrix3F get_transformation(const Tungsten::SdlApplication& app) const
     {
         return Xyz::scale3(compute_scale(app))
-               * Xyz::translate3(-view_.center);
+               * Xyz::translate3(-center_);
     }
 
     yimage::Image img_;
-    double img_asp_ratio_ = {};
     std::vector<Tungsten::BufferHandle> buffers_;
     Tungsten::VertexArrayHandle vertex_array_;
     Tungsten::TextureHandle texture_;
     Render2DShaderProgram program_;
-    View view_;
+    double img_asp_ratio_ = 1.0;
+    Xyz::Vector2F center_;
+    int scale_ = 0;
     Xyz::Vector2F mouse_pos_;
-    Xyz::Vector2F prev_mouse_pos_;
-    bool mouse_move_ = {};
+    bool mouse_move_ = false;
 };
 
 int main(int argc, char* argv[])
