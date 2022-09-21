@@ -47,10 +47,9 @@ namespace
 class ImageViewer : public Tungsten::EventLoop
 {
 public:
-    void set_image(yimage::Image image)
-    {
-        img_ = std::move(image);
-    }
+    explicit ImageViewer(yimage::Image image)
+        : img_(std::move(image))
+    {}
 
     void on_startup(Tungsten::SdlApplication& app) final
     {
@@ -150,11 +149,11 @@ private:
             float(2 * event.motion.x) / float(w) - 1,
             float(2 * (h - event.motion.y)) / float(h) - 1);
 
-        if (mouse_move_)
+        if (is_panning_)
         {
             center_ = divide(mouse_pos_ - new_mouse_pos,
-                                  compute_scale(app))
-                           + center_;
+                             compute_scale(app))
+                      + center_;
         }
 
         mouse_pos_ = new_mouse_pos;
@@ -165,7 +164,7 @@ private:
                               const SDL_Event& event)
     {
         if (event.button.button == SDL_BUTTON_LEFT)
-            mouse_move_ = true;
+            is_panning_ = true;
         return true;
     }
 
@@ -173,7 +172,7 @@ private:
                             const SDL_Event& event)
     {
         if (event.button.button == SDL_BUTTON_LEFT)
-            mouse_move_ = false;
+            is_panning_ = false;
         return true;
     }
 
@@ -206,7 +205,7 @@ private:
     Xyz::Vector2F center_;
     int scale_ = 0;
     Xyz::Vector2F mouse_pos_;
-    bool mouse_move_ = false;
+    bool is_panning_ = false;
 };
 
 int main(int argc, char* argv[])
@@ -218,8 +217,8 @@ int main(int argc, char* argv[])
                        .help("An image file (PNG or JPEG)."));
         Tungsten::SdlApplication::add_command_line_options(parser);
         auto args = parser.parse(argc, argv);
-        auto event_loop = std::make_unique<ImageViewer>();
-        event_loop->set_image(yimage::read_image(args.value("IMAGE").as_string()));
+        auto event_loop = std::make_unique<ImageViewer>(
+            yimage::read_image(args.value("IMAGE").as_string()));
         Tungsten::SdlApplication app("ShowPng", std::move(event_loop));
         app.read_command_line_options(args);
         app.run();
